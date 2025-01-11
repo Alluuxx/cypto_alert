@@ -1,0 +1,151 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mosquitto-new
+  namespace: sdx-assignment-alexheik
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mosquitto-new
+  template:
+    metadata:
+      labels:
+        app: mosquitto-new
+    spec:
+      containers:
+      - name: mosquitto
+        image: eclipse-mosquitto:latest
+        ports:
+        - containerPort: 1883
+        - containerPort: 8883
+        volumeMounts:
+        - name: mosquitto-conf
+          mountPath: /mosquitto/config/mosquitto.conf
+          subPath: mosquitto.conf
+        - name: mosquitto-certs
+          mountPath: /mosquitto/certs
+      volumes:
+      - name: mosquitto-conf
+        configMap:
+          name: mosquitto-config-new
+      - name: mosquitto-certs
+        configMap:
+          name: mosquitto-certs-new
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mosquitto-new
+  namespace: sdx-assignment-alexheik
+spec:
+  selector:
+    app: mosquitto-new
+  ports:
+    - port: 1883
+      targetPort: 1883
+      protocol: TCP
+      name: mqtt
+    - port: 443
+      targetPort: 8883
+      protocol: TCP
+      name: mqtts
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mosquitto-config-new
+  namespace: sdx-assignment-alexheik
+data:
+  mosquitto.conf: |
+    listener 1883
+    allow_anonymous true
+    listener 8883
+    cafile /mosquitto/certs/ca.crt
+    certfile /mosquitto/certs/server.crt
+    keyfile /mosquitto/certs/server.key
+    require_certificate false
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mosquitto-certs-new
+  namespace: sdx-assignment-alexheik
+data: 
+  ca.crt: |
+    <contents-of-ca.crt>
+  server.crt: |
+    <contents-of-server.crt>
+  server.key: |
+    <contents-of-server.key>
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: price-fetcher
+  namespace: sdx-assignment-alexheik
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: price-fetcher
+  template:
+    metadata:
+      labels:
+        app: price-fetcher
+    spec:
+      containers:
+      - name: price-fetcher
+        image: image-registry.apps.2.rahti.csc.fi/sdx-assignment-alexheik/price-fetcher:1.0
+        env:
+        - name: MQTT_BROKER
+          value: mosquitto-new
+        - name: MQTT_PORT
+          value: "443"
+        - name: MQTT_TOPIC
+          value: "crypto/prices"
+        - name: API_KEY
+          value: "YOUR-API-KEY"
+        - name: WAIT_TIME
+          value: "60"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: price-notifier
+  namespace: sdx-assignment-alexheik
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: price-notifier
+  template:
+    metadata:
+      labels:
+        app: price-notifier
+    spec:
+      containers:
+      - name: price-notifier
+        image: image-registry.apps.2.rahti.csc.fi/sdx-assignment-alexheik/price-notifier:1.0
+        env:
+        - name: MQTT_BROKER
+          value: mosquitto-new
+        - name: MQTT_PORT
+          value: "443"
+        - name: PRICE_TOPIC
+          value: "crypto/prices"
+        - name: ALERT_TOPIC
+          value: "crypto/alerts"
+        - name: THRESHOLD
+          value: "0.06"
+        - name: DISCORD_TOKEN
+          value: "YOUR-DISCORD-TOKEN"
+        - name: DISCORD_CHANNEL_ID
+          value: "YOUR-DISCORD-CHANNEL-ID"
+
+---
+
